@@ -34,18 +34,16 @@ public class LeaveApplicationControllerV2 {
     // ================= APPLY LEAVE =================
     @PostMapping(value = "/apply", consumes = "multipart/form-data")
     public LeaveApplication applyLeave(
-            @RequestParam Integer employeeId,
+            @RequestParam Long employeeId,
             @RequestParam String leaveType,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam String reason,
-            // --- ADD THESE TWO PARAMETERS ---
             @RequestParam(required = false) String halfDayType,
-            @RequestParam(required = false) String compOffType,
             @RequestParam(required = false) MultipartFile[] files
     ) throws IOException {
 
-        // ===== CASE-INSENSITIVE ENUM PARSING =====
+        // ===== ENUM PARSING =====
         LeaveType type;
         try {
             type = LeaveType.valueOf(leaveType.toUpperCase());
@@ -61,12 +59,11 @@ public class LeaveApplicationControllerV2 {
         leave.setEndDate(endDate);
         leave.setReason(reason);
 
-        // --- MANUALLY SET THE NEW TYPES ---
+        // ===== HALF DAY TYPE =====
         if (halfDayType != null && !halfDayType.isEmpty()) {
-            leave.setHalfDayType(com.wenxt.leavemanagement.enums.HalfDayType.valueOf(halfDayType.toUpperCase()));
-        }
-        if (compOffType != null && !compOffType.isEmpty()) {
-            leave.setCompOffType(com.wenxt.leavemanagement.enums.CompOffType.valueOf(compOffType.toUpperCase()));
+            leave.setHalfDayType(
+                    com.wenxt.leavemanagement.enums.HalfDayType.valueOf(halfDayType.toUpperCase())
+            );
         }
 
         // ===== FILE HANDLING =====
@@ -88,16 +85,12 @@ public class LeaveApplicationControllerV2 {
                 Path path = uploadPath.resolve(uniqueName);
                 Files.write(path, file.getBytes());
 
-                // Create attachment
                 LeaveAttachment attachment = new LeaveAttachment();
-
-                // --- FIX: Remove the leading "/uploads/" here ---
-                // The Service will add the full "http://IP:8081/uploads/" later.
                 attachment.setFileUrl(uniqueName);
-
                 attachment.setLeaveApplication(leave);
                 attachments.add(attachment);
             }
+
             leave.setAttachments(attachments);
         }
 
