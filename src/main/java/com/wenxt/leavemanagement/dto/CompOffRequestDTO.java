@@ -10,11 +10,16 @@ public class CompOffRequestDTO {
 
     public static class CompOffEntry {
         private LocalDate workedDate;
+        private LocalDate plannedLeaveDate; // ✅ Field for Scenario 5
         private int days; // Usually 1
 
         // Getters and Setters
         public LocalDate getWorkedDate() { return workedDate; }
         public void setWorkedDate(LocalDate workedDate) { this.workedDate = workedDate; }
+
+        public LocalDate getPlannedLeaveDate() { return plannedLeaveDate; }
+        public void setPlannedLeaveDate(LocalDate plannedLeaveDate) { this.plannedLeaveDate = plannedLeaveDate; }
+
         public int getDays() { return days; }
         public void setDays(int days) { this.days = days; }
     }

@@ -30,6 +30,8 @@ public class CompOff {
      * This field captures that "wanted" date.
      * Even if filled, status must remain PENDING until teammates approve.
      */
+    // ✅ ADDED EXPLICIT COLUMN MAPPING
+    @Column(name = "planned_leave_date")
     private LocalDate plannedLeaveDate;
 
     /**
@@ -50,6 +52,8 @@ public class CompOff {
      * When the employee applies via the Leave Application dropdown,
      * this ID links this credit to that specific leave record.
      */
+    // ✅ ADDED EXPLICIT COLUMN MAPPING
+    @Column(name = "used_leave_application_id")
     private Long usedLeaveApplicationId;
 
     // Optional: Reason for working on a holiday
