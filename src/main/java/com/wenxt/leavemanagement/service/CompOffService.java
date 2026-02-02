@@ -25,123 +25,82 @@ public class CompOffService {
         this.holidayChecker = holidayChecker;
     }
 
-    // =====================================================
-    // 1️⃣ EARN BULK COMPOFF (WORKED ON MULTIPLE HOLIDAYS)
-    // =====================================================
+    // 1️⃣ REQUEST BULK COMPOFF (Starts as PENDING)
     @Transactional
-    public void earnBulkCompOff(CompOffRequestDTO request) {
+    public void requestBulkCompOff(CompOffRequestDTO request) {
         if (request.getEmployeeId() == null) {
             throw new BadRequestException("Employee ID is required");
         }
-
-        if (request.getEntries() == null || request.getEntries().isEmpty()) {
-            throw new BadRequestException("No worked dates provided");
-        }
-
         for (CompOffRequestDTO.CompOffEntry entry : request.getEntries()) {
-            LocalDate workedDate = entry.getWorkedDate();
-            BigDecimal days = BigDecimal.valueOf(entry.getDays());
-
-            // ✅ VALIDATE: MUST BE HOLIDAY / WEEKEND
-            if (!holidayChecker.isNonWorkingDay(workedDate)) {
-                throw new BadRequestException(
-                        "Date " + workedDate + " is not a holiday or weekend. CompOff denied."
-                );
+            if (!holidayChecker.isNonWorkingDay(entry.getWorkedDate())) {
+                throw new BadRequestException("Date " + entry.getWorkedDate() + " is not a holiday/weekend.");
             }
-
-            // 🚫 VALIDATE: PREVENT DUPLICATE EARN FOR SAME DAY
-            boolean alreadyEarned =
-                    compOffRepository.existsByEmployeeIdAndWorkedDate(request.getEmployeeId(), workedDate);
-
-            if (alreadyEarned) {
-                throw new BadRequestException(
-                        "CompOff already earned for date: " + workedDate
-                );
-            }
-
-            // 💾 SAVE RECORD
             CompOff compOff = new CompOff();
             compOff.setEmployeeId(request.getEmployeeId());
-            compOff.setWorkedDate(workedDate);
-            compOff.setDays(days);
-            compOff.setStatus(CompOffStatus.EARNED);
-
+            compOff.setWorkedDate(entry.getWorkedDate());
+            compOff.setDays(BigDecimal.valueOf(entry.getDays()));
+            compOff.setStatus(CompOffStatus.PENDING); // Teammate must approve this later
             compOffRepository.save(compOff);
         }
     }
 
-    // =====================================================
-    // 2️⃣ CHECK AVAILABLE COMPOFF BALANCE
-    // =====================================================
-    public BigDecimal getAvailableCompOffDays(Long employeeId) {
-        if (employeeId == null) {
-            throw new BadRequestException("Employee ID is required");
+    // 2️⃣ APPROVE COMPOFF (Teammate Action)
+    @Transactional
+    public void approveCompOff(Long id) {
+        CompOff compOff = compOffRepository.findById(id)
+                .orElseThrow(() -> new BadRequestException("CompOff record not found"));
+        if (compOff.getStatus() != CompOffStatus.PENDING) {
+            throw new BadRequestException("Only PENDING requests can be approved.");
         }
+        compOff.setStatus(CompOffStatus.EARNED);
+        compOffRepository.save(compOff);
+    }
 
-        BigDecimal earned = compOffRepository.sumDaysByEmployeeAndStatus(
-                employeeId, CompOffStatus.EARNED
-        );
-
-        BigDecimal used = compOffRepository.sumDaysByEmployeeAndStatus(
-                employeeId, CompOffStatus.USED
-        );
-
+    // 3️⃣ CHECK BALANCE (Only counts EARNED, ignores PENDING)
+    public BigDecimal getAvailableCompOffDays(Long employeeId) {
+        BigDecimal earned = compOffRepository.sumDaysByEmployeeAndStatus(employeeId, CompOffStatus.EARNED);
+        BigDecimal used = compOffRepository.sumDaysByEmployeeAndStatus(employeeId, CompOffStatus.USED);
         earned = (earned != null) ? earned : BigDecimal.ZERO;
         used = (used != null) ? used : BigDecimal.ZERO;
-
         return earned.subtract(used);
     }
 
-    // =====================================================
-    // 3️⃣ USE COMPOFF (WHEN APPLYING LEAVE) - FIFO SPLIT LOGIC
-    // =====================================================
+    // 4️⃣ USE COMPOFF (This was the missing symbol!)
     @Transactional
-    public void useCompOff(Long employeeId,
-                           BigDecimal daysToDeduct,
-                           Long leaveApplicationId) {
-
-        if (employeeId == null || daysToDeduct == null || leaveApplicationId == null) {
-            throw new BadRequestException("Invalid CompOff usage request");
-        }
-
+    public void useCompOff(Long employeeId, BigDecimal daysToDeduct, Long leaveApplicationId) {
         BigDecimal remaining = daysToDeduct;
 
-        // Fetch earned records in FIFO (Oldest Worked Dates first)
-        List<CompOff> earnedList = compOffRepository.findEarnedCompOffs(employeeId);
+        // Fetch EARNED records sorted by workedDate (FIFO)
+        List<CompOff> earnedList = compOffRepository.findByEmployeeIdAndStatusOrderByWorkedDateAsc(employeeId, CompOffStatus.EARNED);
 
         for (CompOff compOff : earnedList) {
             if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
 
-            BigDecimal availableInRecord = compOff.getDays();
-
-            if (availableInRecord.compareTo(remaining) <= 0) {
-                // CASE A: Full record consumed
+            BigDecimal available = compOff.getDays();
+            if (available.compareTo(remaining) <= 0) {
+                // Fully consume this record
                 compOff.setStatus(CompOffStatus.USED);
                 compOff.setUsedLeaveApplicationId(leaveApplicationId);
-                remaining = remaining.subtract(availableInRecord);
-                compOffRepository.save(compOff);
+                remaining = remaining.subtract(available);
             } else {
-                // CASE B: Partial record consumed (Split logic)
-                // 1. Create leftover record
+                // Partially consume (Split logic)
                 CompOff leftover = new CompOff();
                 leftover.setEmployeeId(employeeId);
                 leftover.setWorkedDate(compOff.getWorkedDate());
-                leftover.setDays(availableInRecord.subtract(remaining));
+                leftover.setDays(available.subtract(remaining));
                 leftover.setStatus(CompOffStatus.EARNED);
                 compOffRepository.save(leftover);
 
-                // 2. Consume required amount from current record
                 compOff.setDays(remaining);
                 compOff.setStatus(CompOffStatus.USED);
                 compOff.setUsedLeaveApplicationId(leaveApplicationId);
-                compOffRepository.save(compOff);
-
                 remaining = BigDecimal.ZERO;
             }
+            compOffRepository.save(compOff);
         }
 
         if (remaining.compareTo(BigDecimal.ZERO) > 0) {
-            throw new BadRequestException("Insufficient balance. Missing: " + remaining + " days.");
+            throw new BadRequestException("Insufficient EARNED balance. Teammates may not have approved your requests yet.");
         }
     }
 }

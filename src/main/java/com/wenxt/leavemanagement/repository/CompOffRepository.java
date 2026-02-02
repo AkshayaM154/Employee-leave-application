@@ -4,6 +4,7 @@ import com.wenxt.leavemanagement.enums.CompOffStatus;
 import com.wenxt.leavemanagement.model.CompOff;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -21,14 +22,12 @@ public interface CompOffRepository extends JpaRepository<CompOff, Long> {
         WHERE c.employeeId = :employeeId
           AND c.status = :status
     """)
-    BigDecimal sumDaysByEmployeeAndStatus(Long employeeId, CompOffStatus status);
+    BigDecimal sumDaysByEmployeeAndStatus(@Param("employeeId") Long employeeId, @Param("status") CompOffStatus status);
 
     // 📋 GET EARNED COMPOFFS (FIFO)
-    @Query("""
-        SELECT c FROM CompOff c
-        WHERE c.employeeId = :employeeId
-          AND c.status = 'EARNED'
-        ORDER BY c.workedDate ASC
-    """)
-    List<CompOff> findEarnedCompOffs(Long employeeId);
+    // Renamed to match the Service call for FIFO logic
+    List<CompOff> findByEmployeeIdAndStatusOrderByWorkedDateAsc(Long employeeId, CompOffStatus status);
+
+    // 👥 TEAMMATE VIEW: Find all pending requests across the company
+    List<CompOff> findByStatus(CompOffStatus status);
 }

@@ -18,20 +18,40 @@ public class CompOff {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private Long employeeId;
 
-    // The holiday / weekend worked
+    // The holiday/weekend the employee actually worked
+    @Column(nullable = false)
     private LocalDate workedDate;
 
-    // Optional – employee may plan leave date
+    /**
+     * 1) Requesting for comp-off knowing wanted leave days
+     * This field captures that "wanted" date.
+     * Even if filled, status must remain PENDING until teammates approve.
+     */
     private LocalDate plannedLeaveDate;
 
+    /**
+     * Workflow Status:
+     * - PENDING: Initial state for all requests.
+     * - EARNED: Approved by teammates (Balance added).
+     * - USED: Linked to a LeaveApplication and consumed.
+     * - REJECTED: Denied by teammates.
+     */
     @Enumerated(EnumType.STRING)
-    private CompOffStatus status;
+    private CompOffStatus status = CompOffStatus.PENDING;
 
-    // Usually 1 or 0.5
+    // The credit amount (1.0 for full day, 0.5 for half day)
+    @Column(precision = 3, scale = 1)
     private BigDecimal days;
 
-    // Set when comp-off is consumed
+    /**
+     * When the employee applies via the Leave Application dropdown,
+     * this ID links this credit to that specific leave record.
+     */
     private Long usedLeaveApplicationId;
+
+    // Optional: Reason for working on a holiday
+    private String description;
 }
