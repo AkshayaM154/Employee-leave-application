@@ -1,17 +1,19 @@
 package com.wenxt.leavemanagement.dto;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 public class CompOffRequestDTO {
 
     private Long employeeId;
-    private List<CompOffEntry> entries;
+    // Initializing to empty list prevents NullPointer if 'entries' is missing in JSON
+    private List<CompOffEntry> entries = new ArrayList<>();
 
     public static class CompOffEntry {
         private LocalDate workedDate;
-        private LocalDate plannedLeaveDate; // ✅ Field for Scenario 5
-        private int days; // Usually 1
+        private LocalDate plannedLeaveDate;
+        private int days;
 
         // Getters and Setters
         public LocalDate getWorkedDate() { return workedDate; }
@@ -27,6 +29,7 @@ public class CompOffRequestDTO {
     // Getters and Setters
     public Long getEmployeeId() { return employeeId; }
     public void setEmployeeId(Long employeeId) { this.employeeId = employeeId; }
+
     public List<CompOffEntry> getEntries() { return entries; }
     public void setEntries(List<CompOffEntry> entries) { this.entries = entries; }
 }

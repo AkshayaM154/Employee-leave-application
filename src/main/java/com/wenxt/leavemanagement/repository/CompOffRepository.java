@@ -12,22 +12,15 @@ import java.util.List;
 
 public interface CompOffRepository extends JpaRepository<CompOff, Long> {
 
-    // 🔒 DUPLICATE CHECK
     boolean existsByEmployeeIdAndWorkedDate(Long employeeId, LocalDate workedDate);
 
-    // 📊 SUM BY STATUS
-    @Query("""
-        SELECT SUM(c.days)
-        FROM CompOff c
-        WHERE c.employeeId = :employeeId
-          AND c.status = :status
-    """)
+    @Query("SELECT SUM(c.days) FROM CompOff c WHERE c.employeeId = :employeeId AND c.status = :status")
     BigDecimal sumDaysByEmployeeAndStatus(@Param("employeeId") Long employeeId, @Param("status") CompOffStatus status);
 
-    // 📋 GET EARNED COMPOFFS (FIFO)
-    // Renamed to match the Service call for FIFO logic
     List<CompOff> findByEmployeeIdAndStatusOrderByWorkedDateAsc(Long employeeId, CompOffStatus status);
 
-    // 👥 TEAMMATE VIEW: Find all pending requests across the company
     List<CompOff> findByStatus(CompOffStatus status);
+
+    // 🔄 Find the exact Comp-Off records linked to a specific leave application for reversal
+    List<CompOff> findByUsedLeaveApplicationId(Long applicationId);
 }

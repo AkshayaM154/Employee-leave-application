@@ -1,5 +1,6 @@
 package com.wenxt.leavemanagement.controller;
 
+import com.wenxt.leavemanagement.dto.LeaveResponse;
 import com.wenxt.leavemanagement.enums.LeaveType;
 import com.wenxt.leavemanagement.model.LeaveApplication;
 import com.wenxt.leavemanagement.model.LeaveAttachment;
@@ -31,19 +32,18 @@ public class LeaveApplicationControllerV2 {
         this.service = service;
     }
 
-    // ================= APPLY LEAVE =================
     @PostMapping(value = "/apply", consumes = "multipart/form-data")
-    public LeaveApplication applyLeave(
+    public LeaveResponse applyLeave(
             @RequestParam Long employeeId,
             @RequestParam String leaveType,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam String reason,
             @RequestParam(required = false) String halfDayType,
+            @RequestParam(defaultValue = "false") boolean confirmLossOfPay, // 👈 NEW PARAMETER
             @RequestParam(required = false) MultipartFile[] files
     ) throws IOException {
 
-        // ===== ENUM PARSING =====
         LeaveType type;
         try {
             type = LeaveType.valueOf(leaveType.toUpperCase());
@@ -51,7 +51,6 @@ public class LeaveApplicationControllerV2 {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid leave type");
         }
 
-        // ===== CREATE LEAVE OBJECT =====
         LeaveApplication leave = new LeaveApplication();
         leave.setEmployeeId(employeeId);
         leave.setLeaveType(type);
@@ -59,48 +58,35 @@ public class LeaveApplicationControllerV2 {
         leave.setEndDate(endDate);
         leave.setReason(reason);
 
-        // ===== HALF DAY TYPE =====
         if (halfDayType != null && !halfDayType.isEmpty()) {
-            leave.setHalfDayType(
-                    com.wenxt.leavemanagement.enums.HalfDayType.valueOf(halfDayType.toUpperCase())
-            );
+            leave.setHalfDayType(com.wenxt.leavemanagement.enums.HalfDayType.valueOf(halfDayType.toUpperCase()));
         }
 
-        // ===== FILE HANDLING =====
+        // File handling logic...
         if (files != null && files.length > 0) {
-            if (files.length > 3) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Maximum 3 files allowed");
-            }
-
             Path uploadPath = Paths.get(uploadDir);
             Files.createDirectories(uploadPath);
-
             List<LeaveAttachment> attachments = new ArrayList<>();
-
             for (MultipartFile file : files) {
                 if (file.isEmpty()) continue;
-
-                String filename = Paths.get(file.getOriginalFilename()).getFileName().toString();
-                String uniqueName = UUID.randomUUID() + "_" + filename;
-                Path path = uploadPath.resolve(uniqueName);
-                Files.write(path, file.getBytes());
-
+                String uniqueName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+                Files.write(uploadPath.resolve(uniqueName), file.getBytes());
                 LeaveAttachment attachment = new LeaveAttachment();
                 attachment.setFileUrl(uniqueName);
                 attachment.setLeaveApplication(leave);
                 attachments.add(attachment);
             }
-
             leave.setAttachments(attachments);
         }
 
-        // ===== SAVE LEAVE =====
-        LeaveApplication savedLeave = service.applyLeave(leave);
+        // 🔹 Pass the confirmation flag to the service
+        LeaveResponse response = service.applyLeave(leave, confirmLossOfPay);
 
-        if (savedLeave.getAttachments() != null) {
-            savedLeave.getAttachments().forEach(a -> a.setLeaveApplication(null));
+        // Clean up circular reference for JSON response
+        if (response.getLeaveApplication() != null && response.getLeaveApplication().getAttachments() != null) {
+            response.getLeaveApplication().getAttachments().forEach(a -> a.setLeaveApplication(null));
         }
 
-        return savedLeave;
+        return response;
     }
 }
