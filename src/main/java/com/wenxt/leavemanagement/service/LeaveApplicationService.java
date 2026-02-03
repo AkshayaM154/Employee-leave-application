@@ -38,7 +38,7 @@ public class LeaveApplicationService {
         this.compOffRepository = compOffRepository;
     }
 
-    // --- 🟢 EMPLOYEE LEAVE LOGIC ---
+    // --- 🟢 EMPLOYEE APPLY LEAVE ---
     @Transactional
     public LeaveResponse applyLeave(LeaveApplication leave, boolean isConfirmed) {
         validateDates(leave);
@@ -62,7 +62,7 @@ public class LeaveApplicationService {
         return new LeaveResponse(savedLeave, null);
     }
 
-    // --- 🔴 ADMIN LEAVE LOGIC ---
+    // --- 🔴 ADMIN APPLY LEAVE ---
     @Transactional
     public LeaveResponse applyAdminLeave(LeaveApplication leave, boolean isConfirmed) {
         validateDates(leave);
@@ -74,7 +74,7 @@ public class LeaveApplicationService {
         }
 
         leave.setDays(calculatedDays);
-        leave.setStatus(LeaveStatus.APPROVED); // Admin recorded leaves are auto-approved
+        leave.setStatus(LeaveStatus.APPROVED);
         processAttachments(leave);
 
         LeaveApplication savedLeave = repository.save(leave);
@@ -86,64 +86,39 @@ public class LeaveApplicationService {
         return new LeaveResponse(savedLeave, null);
     }
 
-    private String checkBalanceAndGetWarning(LeaveApplication leave, BigDecimal calculatedDays) {
-        if (leave.getLeaveType() == LeaveType.COMP_OFF) {
-            BigDecimal available = compOffService.getAvailableCompOffDays(leave.getEmployeeId().longValue());
-            if (available.compareTo(calculatedDays) < 0) {
-                return "There is no leave left (Available: " + available + "). If you take this, it will be added to the Loss of Pay. Do you wish to continue?";
-            }
-        }
-        return null;
-    }
-
     // --- 🛠️ CANCELLATION LOGIC ---
 
-    /**
-     * Cancel leave as an Admin.
-     * Can cancel any leave regardless of current status.
-     */
     @Transactional
     public void cancelAdminLeave(Long applicationId) {
         LeaveApplication leave = repository.findById(applicationId)
                 .orElseThrow(() -> new BadRequestException("Leave application not found with ID: " + applicationId));
-
         performCancellation(leave);
     }
 
-    /**
-     * Cancel leave as an Employee.
-     * Includes security check to ensure they own the record and it's in a cancellable state.
-     */
     @Transactional
     public void cancelEmployeeLeave(Long applicationId, Long employeeId) {
         LeaveApplication leave = repository.findById(applicationId)
                 .orElseThrow(() -> new BadRequestException("Leave application not found with ID: " + applicationId));
 
-        // Security Check
         if (!leave.getEmployeeId().equals(employeeId.intValue())) {
-            throw new BadRequestException("You are not authorized to cancel this leave application.");
+            throw new BadRequestException("Unauthorized: You cannot cancel another employee's leave.");
         }
 
-        // State Check
         if (leave.getStatus() == LeaveStatus.REJECTED || leave.getStatus() == LeaveStatus.CANCELLED) {
-            throw new BadRequestException("Leave is already " + leave.getStatus() + " and cannot be cancelled.");
+            throw new BadRequestException("Leave is already finalized as " + leave.getStatus());
         }
-
         performCancellation(leave);
     }
 
-    /**
-     * Shared logic to flip status and reverse Comp-Off usage.
-     */
     private void performCancellation(LeaveApplication leave) {
-        // 🔄 REVERSAL LOGIC: Restore credits only if the leave was APPROVED or PENDING and using Comp-Off
+        // 🔄 REVERSAL: Restore Comp-Off credits if they were deducted for APPROVED or PENDING leaves
         if (leave.getLeaveType() == LeaveType.COMP_OFF &&
                 (leave.getStatus() == LeaveStatus.APPROVED || leave.getStatus() == LeaveStatus.PENDING)) {
 
             List<CompOff> linkedCredits = compOffRepository.findByUsedLeaveApplicationId(leave.getApplicationId());
             for (CompOff credit : linkedCredits) {
-                credit.setStatus(CompOffStatus.EARNED); // Back to usable
-                credit.setUsedLeaveApplicationId(null); // Clear link
+                credit.setStatus(CompOffStatus.EARNED);
+                credit.setUsedLeaveApplicationId(null);
                 compOffRepository.save(credit);
             }
         }
@@ -152,7 +127,17 @@ public class LeaveApplicationService {
         repository.save(leave);
     }
 
-    // --- 🛠️ HELPER METHODS ---
+    // --- 🛠️ HELPERS ---
+
+    private String checkBalanceAndGetWarning(LeaveApplication leave, BigDecimal calculatedDays) {
+        if (leave.getLeaveType() == LeaveType.COMP_OFF) {
+            BigDecimal available = compOffService.getAvailableCompOffDays(leave.getEmployeeId().longValue());
+            if (available.compareTo(calculatedDays) < 0) {
+                return "Insufficient balance. (Available: " + available + "). Proceed with Loss of Pay?";
+            }
+        }
+        return null;
+    }
 
     private void validateDates(LeaveApplication leave) {
         if (leave.getEndDate().isBefore(leave.getStartDate())) {
@@ -163,9 +148,7 @@ public class LeaveApplicationService {
     private void processAttachments(LeaveApplication leave) {
         if (leave.getAttachments() != null) {
             leave.getAttachments().forEach(attachment -> {
-                String fileName = attachment.getFileUrl();
-                String webUrl = "http://" + SERVER_IP + ":" + SERVER_PORT + "/uploads/leaves/" + fileName;
-                attachment.setFileUrl(webUrl);
+                attachment.setFileUrl("http://" + SERVER_IP + ":" + SERVER_PORT + "/uploads/leaves/" + attachment.getFileUrl());
                 attachment.setLeaveApplication(leave);
             });
         }
